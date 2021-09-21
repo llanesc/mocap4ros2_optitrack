@@ -164,19 +164,18 @@ void OptitrackDriverNode::process_rigid_body(const rclcpp::Time & frame_time, un
 {
     int marker_cnt = 0;
 
-    geometry_msgs::msg::PoseStamped poseStamped;
+    px4_msgs::msg::VehicleOdometry odom_msg;
+    odom_msg.local_frame = px4_msgs::msg::VehicleOdometry::LOCAL_FRAME_NED;
+    odom_msg.timestamp = timestamp_;
+    odom_msg.x =  latest_body_frame_data.x;
+    odom_msg.y =  latest_body_frame_data.z;
+    odom_msg.z = -latest_body_frame_data.y;
+    odom_msg.q[0] =  latest_body_frame_data.qw;
+    odom_msg.q[1] =  latest_body_frame_data.qx;
+    odom_msg.q[2] =  latest_body_frame_data.qz;
+    odom_msg.q[3] = -latest_body_frame_data.qy;
 
-    poseStamped.header.frame_id = std::to_string(rigid_body_id_);
-    poseStamped.header.stamp = frame_time;
-    poseStamped.pose.position.set__x(latest_body_frame_data.x);
-    poseStamped.pose.position.set__y(latest_body_frame_data.y);
-    poseStamped.pose.position.set__z(latest_body_frame_data.z);
-    poseStamped.pose.orientation.set__w(latest_body_frame_data.qw);
-    poseStamped.pose.orientation.set__x(latest_body_frame_data.qx);
-    poseStamped.pose.orientation.set__y(latest_body_frame_data.qy);
-    poseStamped.pose.orientation.set__z(latest_body_frame_data.qz);
-
-    pose_pub_->publish(poseStamped);
+    odom_pub_->publish(odom_msg);
 }
 
 using CallbackReturnT =
@@ -216,8 +215,15 @@ OptitrackDriverNode::on_configure(const rclcpp_lifecycle::State &)
     client_change_state_ = this->create_client<lifecycle_msgs::srv::ChangeState>(
             "/optitrack2_driver/change_state");
 
-    pose_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>(
-            "/optitrack2_driver/" + rigid_body_name_ + "/PoseStamped", 100);
+    timesync_sub_ =
+            this->create_subscription<px4_msgs::msg::Timesync>("/" + rigid_body_name_ + "/fmu/timesync/out", 10,
+                                                               [this](const px4_msgs::msg::Timesync::UniquePtr msg)
+                                                               {
+                                                                   timestamp_.store(msg->timestamp);
+                                                               });
+
+    odom_pub_ = create_publisher<px4_msgs::msg::VehicleOdometry>(
+            "/" + rigid_body_name_ + "/fmu/vehicle_visual_odometry/in", 100);
 
     update_pub_ = create_publisher<std_msgs::msg::Empty>(
             "/optitrack2_driver/update_notify", qos);
@@ -233,7 +239,7 @@ OptitrackDriverNode::on_activate(const rclcpp_lifecycle::State &)
     RCLCPP_INFO(get_logger(), "State id [%d]", get_current_state().id());
     RCLCPP_INFO(get_logger(), "State label [%s]", get_current_state().label().c_str());
     update_pub_->on_activate();
-    pose_pub_->on_activate();
+    odom_pub_->on_activate();
     connect_optitrack();
     RCLCPP_INFO(get_logger(), "Activated!\n");
 
@@ -246,7 +252,7 @@ OptitrackDriverNode::on_deactivate(const rclcpp_lifecycle::State &)
     RCLCPP_INFO(get_logger(), "State id [%d]", get_current_state().id());
     RCLCPP_INFO(get_logger(), "State label [%s]", get_current_state().label().c_str());
     update_pub_->on_deactivate();
-    pose_pub_->on_deactivate();
+    odom_pub_->on_deactivate();
     RCLCPP_INFO(get_logger(), "Deactivated!\n");
 
     return CallbackReturnT::SUCCESS;

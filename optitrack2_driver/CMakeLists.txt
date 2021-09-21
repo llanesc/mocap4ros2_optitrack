@@ -19,6 +19,7 @@ find_package(rclcpp_lifecycle REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(mocap_msgs REQUIRED)
+find_package(px4_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(device_control_msgs REQUIRED)
 find_package(device_control REQUIRED)
@@ -31,6 +32,7 @@ set(dependencies
   tf2
   tf2_ros
   mocap_msgs
+  px4_msgs
   device_control
   device_control_msgs
 )

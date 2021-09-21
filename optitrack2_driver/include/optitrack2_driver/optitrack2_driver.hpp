@@ -35,6 +35,8 @@
 #include "mocap_msgs/msg/markers.hpp"
 #include "std_msgs/msg/empty.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "px4_msgs/msg/vehicle_odometry.hpp"
+#include "px4_msgs/msg/timesync.hpp"
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp/node_interfaces/node_logging.hpp"
@@ -88,7 +90,8 @@ protected:
     // std::shared_ptr<rclcpp::SyncParametersClient> parameters_client;
     rclcpp::Time now_time;
     std::string myParam;
-    rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
+    rclcpp_lifecycle::LifecyclePublisher<px4_msgs::msg::VehicleOdometry>::SharedPtr odom_pub_;
+    rclcpp::Subscription<px4_msgs::msg::Timesync>::SharedPtr timesync_sub_;
     std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
     int32_t rigid_body_id_{-1};
     std::string connection_type_;
@@ -104,6 +107,7 @@ protected:
     std::string qos_history_policy_;
     std::string qos_reliability_policy_;
     int qos_depth_;
+    std::atomic<uint64_t> timestamp_;
 
     void process_frame(sFrameOfMocapData data);
     void process_rigid_body(const rclcpp::Time & frame_time, unsigned int optitrack_frame_num);
