@@ -40,7 +40,7 @@ OptitrackDriverNode::OptitrackDriverNode(const rclcpp::NodeOptions node_options)
     declare_parameter<std::string>("multicast_address", "000.000.000.000");
     declare_parameter<uint16_t>("server_command_port", 0);
     declare_parameter<uint16_t>("server_data_port", 0);
-    declare_parameter<std::string>("rigid_body_name", "mav1");
+    declare_parameter<std::vector<std::string>>("rigid_body_name_array", std::vector<std::string>({"unknown"}));
     declare_parameter<int>("lastFrameNumber", 0);
     declare_parameter<int>("frameCount", 0);
     declare_parameter<int>("droppedFrameCount", 0);
@@ -347,7 +347,7 @@ void OptitrackDriverNode::initParameters()
     get_parameter<std::string>("multicast_address", multicast_address_);
     get_parameter<uint16_t>("server_command_port", server_command_port_);
     get_parameter<uint16_t>("server_data_port", server_data_port_);
-    get_parameter<std::vector<std::string>>("rigid_body_name_array_", rigid_body_name_array_);
+    get_parameter<std::vector<std::string>>("rigid_body_name_array", rigid_body_name_array_);
     get_parameter<int>("lastFrameNumber", lastFrameNumber_);
     get_parameter<int>("frameCount", frameCount_);
     get_parameter<int>("droppedFrameCount", droppedFrameCount_);
