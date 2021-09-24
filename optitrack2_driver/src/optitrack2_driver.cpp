@@ -112,12 +112,11 @@ void NATNET_CALLCONV OptitrackDriverNode::process_frame_callback(sFrameOfMocapDa
 }
 
 // In charge of get the Optitrack information and convert it to optitrack_msgs
-void OptitrackDriverNode::process_frame(sFrameOfMocapData data)
+void OptitrackDriverNode::process_frame(sFrameOfMocapData frame_data)
 {
-    latest_data = data;
 
     static rclcpp::Time lastTime;
-    int OutputFrameNum = data.iFrame;
+    int OutputFrameNum = frame_data.iFrame;
 
 
     int frameDiff = 0;
@@ -137,46 +136,41 @@ void OptitrackDriverNode::process_frame(sFrameOfMocapData data)
     lastFrameNumber_ = OutputFrameNum;
 
     if (frameDiff != 0) {
-        const uint64_t softwareLatencyHostTicks = data.TransmitTimestamp - data.CameraDataReceivedTimestamp;
+        const uint64_t softwareLatencyHostTicks = frame_data.TransmitTimestamp - frame_data.CameraDataReceivedTimestamp;
 //        auto softwareLatencyNano = static_cast<rcl_duration_value_t>(((double)softwareLatencyHostTicks * 1000000000.0) / (double)(server_description.HighResClockFrequency));
 
 //        rclcpp::Duration optitrack_latency(softwareLatencyNano);
-        get_latest_body_frame_data();
         now_time = this->get_clock()->now();
-        process_rigid_body(now_time, lastFrameNumber_);
+        process_rigid_body_array(frame_data, now_time);
         lastTime = now_time;
     }
 }
 
-void OptitrackDriverNode::get_latest_body_frame_data()
+void OptitrackDriverNode::process_rigid_body_array(const sFrameOfMocapData &frame_data, const rclcpp::Time &frame_time)
 {
-    if (rigid_body_id_ != -1)
-    {
-        for(int i=0; i < latest_data.nRigidBodies; i++) {
-            if (latest_data.RigidBodies[i].ID == rigid_body_id_) {
-                latest_body_frame_data = latest_data.RigidBodies[i];
-            }
+
+    mocap_msgs::msg::RigidBodyArray rigid_body_array;
+
+    rigid_body_array.header.frame_id = "optitrack_local_frame";
+    rigid_body_array.header.stamp = this->now();
+
+    for (int i = 0; i < frame_data.nRigidBodies; i++) {
+        auto rigid_body_search_ptr = rigid_body_map_.find(frame_data.RigidBodies[i].ID);
+        if (rigid_body_search_ptr != rigid_body_map_.end()) {
+            geometry_msgs::msg::Pose pose;
+            pose.position.set__x(frame_data.RigidBodies[i].x);
+            pose.position.set__y(frame_data.RigidBodies[i].y);
+            pose.position.set__z(frame_data.RigidBodies[i].z);
+            pose.orientation.set__w(frame_data.RigidBodies[i].qw);
+            pose.orientation.set__x(frame_data.RigidBodies[i].qx);
+            pose.orientation.set__y(frame_data.RigidBodies[i].qy);
+            pose.orientation.set__z(frame_data.RigidBodies[i].qz);
+            rigid_body_array.poses.push_back(pose);
+            rigid_body_array.rigid_body_names.push_back(rigid_body_search_ptr->second);
         }
     }
-}
 
-void OptitrackDriverNode::process_rigid_body(const rclcpp::Time & frame_time, unsigned int optitrack_frame_num)
-{
-    int marker_cnt = 0;
-
-    geometry_msgs::msg::PoseStamped poseStamped;
-
-    poseStamped.header.frame_id = std::to_string(rigid_body_id_);
-    poseStamped.header.stamp = frame_time;
-    poseStamped.pose.position.set__x(latest_body_frame_data.x);
-    poseStamped.pose.position.set__y(latest_body_frame_data.y);
-    poseStamped.pose.position.set__z(latest_body_frame_data.z);
-    poseStamped.pose.orientation.set__w(latest_body_frame_data.qw);
-    poseStamped.pose.orientation.set__x(latest_body_frame_data.qx);
-    poseStamped.pose.orientation.set__y(latest_body_frame_data.qy);
-    poseStamped.pose.orientation.set__z(latest_body_frame_data.qz);
-
-    pose_pub_->publish(poseStamped);
+    rigid_body_pub_->publish(rigid_body_array);
 }
 
 using CallbackReturnT =
@@ -216,8 +210,8 @@ OptitrackDriverNode::on_configure(const rclcpp_lifecycle::State &)
     client_change_state_ = this->create_client<lifecycle_msgs::srv::ChangeState>(
             "/optitrack2_driver/change_state");
 
-    pose_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>(
-            "/optitrack2_driver/" + rigid_body_name_ + "/PoseStamped", 100);
+    rigid_body_pub_ = create_publisher<mocap_msgs::msg::RigidBodyArray>(
+            "/optitrack2_driver/rigid_body_array", 10);
 
     update_pub_ = create_publisher<std_msgs::msg::Empty>(
             "/optitrack2_driver/update_notify", qos);
@@ -233,7 +227,7 @@ OptitrackDriverNode::on_activate(const rclcpp_lifecycle::State &)
     RCLCPP_INFO(get_logger(), "State id [%d]", get_current_state().id());
     RCLCPP_INFO(get_logger(), "State label [%s]", get_current_state().label().c_str());
     update_pub_->on_activate();
-    pose_pub_->on_activate();
+    rigid_body_pub_->on_activate();
     connect_optitrack();
     RCLCPP_INFO(get_logger(), "Activated!\n");
 
@@ -246,7 +240,7 @@ OptitrackDriverNode::on_deactivate(const rclcpp_lifecycle::State &)
     RCLCPP_INFO(get_logger(), "State id [%d]", get_current_state().id());
     RCLCPP_INFO(get_logger(), "State label [%s]", get_current_state().label().c_str());
     update_pub_->on_deactivate();
-    pose_pub_->on_deactivate();
+    rigid_body_pub_->on_deactivate();
     RCLCPP_INFO(get_logger(), "Deactivated!\n");
 
     return CallbackReturnT::SUCCESS;
@@ -311,8 +305,9 @@ bool OptitrackDriverNode::connect_optitrack()
 
         for(int i=0; i < data_descriptions->nDataDescriptions; i++) {
             if (data_descriptions->arrDataDescriptions[i].type == Descriptor_RigidBody) {
-                if (strcmp(data_descriptions->arrDataDescriptions[i].Data.RigidBodyDescription->szName,rigid_body_name_.c_str()) == 0){
-                    rigid_body_id_ = data_descriptions->arrDataDescriptions[i].Data.RigidBodyDescription->ID;
+                if (std::find(rigid_body_name_array_.begin(),rigid_body_name_array_.end(),data_descriptions->arrDataDescriptions[i].Data.RigidBodyDescription->szName) != std::end(rigid_body_name_array_)){
+                    rigid_body_map_.insert({data_descriptions->arrDataDescriptions[i].Data.RigidBodyDescription->ID,
+                                            data_descriptions->arrDataDescriptions[i].Data.RigidBodyDescription->szName});
                 }
             }
         }
@@ -352,7 +347,7 @@ void OptitrackDriverNode::initParameters()
     get_parameter<std::string>("multicast_address", multicast_address_);
     get_parameter<uint16_t>("server_command_port", server_command_port_);
     get_parameter<uint16_t>("server_data_port", server_data_port_);
-    get_parameter<std::string>("rigid_body_name", rigid_body_name_);
+    get_parameter<std::vector<std::string>>("rigid_body_name_array_", rigid_body_name_array_);
     get_parameter<int>("lastFrameNumber", lastFrameNumber_);
     get_parameter<int>("frameCount", frameCount_);
     get_parameter<int>("droppedFrameCount", droppedFrameCount_);
@@ -379,9 +374,6 @@ void OptitrackDriverNode::initParameters()
     RCLCPP_INFO(
             get_logger(),
             "Param server_data_port: %i", server_data_port_);
-    RCLCPP_INFO(
-            get_logger(),
-            "Param rigid_body_name: %s", rigid_body_name_.c_str());
     RCLCPP_INFO(
             get_logger(),
             "Param lastFrameNumber: %d", lastFrameNumber_);

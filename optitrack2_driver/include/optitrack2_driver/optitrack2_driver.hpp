@@ -34,7 +34,7 @@
 #include "mocap_msgs/msg/marker.hpp"
 #include "mocap_msgs/msg/markers.hpp"
 #include "std_msgs/msg/empty.hpp"
-#include "geometry_msgs/msg/pose_stamped.hpp"
+#include "mocap_msgs/msg/rigid_body_array.hpp"
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp/node_interfaces/node_logging.hpp"
@@ -83,21 +83,19 @@ protected:
     sNatNetClientConnectParams client_params;
     sServerDescription server_description;
     sDataDescriptions* data_descriptions{nullptr};
-    sFrameOfMocapData latest_data;
-    sRigidBodyData latest_body_frame_data;
     // std::shared_ptr<rclcpp::SyncParametersClient> parameters_client;
     rclcpp::Time now_time;
     std::string myParam;
-    rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_pub_;
+    rclcpp_lifecycle::LifecyclePublisher<mocap_msgs::msg::RigidBodyArray>::SharedPtr rigid_body_pub_;
     std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
-    int32_t rigid_body_id_{-1};
+    std::map<int32_t, std::string> rigid_body_map_;
     std::string connection_type_;
     std::string server_address_;
     std::string local_address_;
     std::string multicast_address_;
     uint16_t server_command_port_;
     uint16_t server_data_port_;
-    std::string rigid_body_name_;
+    std::vector<std::string> rigid_body_name_array_;
     int lastFrameNumber_;
     int frameCount_;
     int droppedFrameCount_;
@@ -105,12 +103,11 @@ protected:
     std::string qos_reliability_policy_;
     int qos_depth_;
 
-    void process_frame(sFrameOfMocapData data);
-    void process_rigid_body(const rclcpp::Time & frame_time, unsigned int optitrack_frame_num);
+    void process_frame(sFrameOfMocapData frame_data);
+    void process_rigid_body_array(const sFrameOfMocapData &frame_data, const rclcpp::Time &frame_time);
     static void NATNET_CALLCONV process_frame_callback(sFrameOfMocapData* data, void* pUserData);
     void control_start(const device_control_msgs::msg::Control::SharedPtr msg) override;
     void control_stop(const device_control_msgs::msg::Control::SharedPtr msg) override;
-    void get_latest_body_frame_data();
 
     std::shared_ptr<rclcpp::Client<lifecycle_msgs::srv::ChangeState>> client_change_state_;
     rclcpp_lifecycle::LifecyclePublisher<std_msgs::msg::Empty>::SharedPtr update_pub_;
